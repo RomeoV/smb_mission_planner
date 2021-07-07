@@ -31,6 +31,9 @@ class DefaultMission(smach.State):
         self.waypoint_idx = 0
         self.topic_names = topic_names
 
+        # I added this
+        self.listener = tf.TransformListener()
+
         self.waypoint_pose_publisher = rospy.Publisher(topic_names['waypoint'], PoseStamped, queue_size=1)
         self.base_pose_subscriber = rospy.Subscriber(topic_names['base_pose'], Odometry, self.basePoseCallback)
         while self.waypoint_pose_publisher.get_num_connections() == 0 and not rospy.is_shutdown():
@@ -73,7 +76,7 @@ class DefaultMission(smach.State):
         if(self.waypoint_idx == 0):
             rospy.logwarn("Starting waypoint of mission unreachable. Aborting current mission.")
             self.waypoint_idx = 0.
-            return 'Aborted'
+            return 'Next Waypoint'
         else:
             rospy.logwarn("Skipping waypoint '" + current_waypoint_name + "'.")
             self.waypoint_idx += 1
@@ -86,7 +89,7 @@ class DefaultMission(smach.State):
         pose_stamped_msg.header.seq = 0
         pose_stamped_msg.header.stamp.secs = rospy.get_rostime().secs
         pose_stamped_msg.header.stamp.nsecs = rospy.get_rostime().nsecs
-        pose_stamped_msg.header.frame_id = "tracking_camera_odom"
+        pose_stamped_msg.header.frame_id = "challenge_frame"
         pose_stamped_msg.pose.position.x = x_m
         pose_stamped_msg.pose.position.y = y_m
         pose_stamped_msg.pose.position.z = 0.
@@ -103,9 +106,14 @@ class DefaultMission(smach.State):
     def basePoseCallback(self, Odometry_msg):
         rospy.loginfo_once("Estimated base pose received from now on.")
 
-        x_m = Odometry_msg.pose.pose.position.x
-        y_m = Odometry_msg.pose.pose.position.y
-        quaternion = Odometry_msg.pose.pose.orientation
+        stamped_pose = PoseStamped()
+        stamped_pose.pose = Odometry_msg.pose.pose
+        stamped_pose.header.frame_id = '/tracking_camera_odom'
+        new_pose_stamped = self.listener.transformPose('/challenge_frame', stamped_pose)
+
+        x_m = new_pose_stamped.pose.position.x
+        y_m = new_pose_stamped.pose.position.y
+        quaternion = new_pose_stamped.pose.orientation
         explicit_quat = [quaternion.x, quaternion.y, quaternion.z, quaternion.w]
         roll_rad, pitch_rad, yaw_rad = tf.transformations.euler_from_quaternion(explicit_quat)
 
